@@ -7,7 +7,7 @@ DECLARE
    BEGIN
         IF amount BETWEEN 0.00 AND 5.00 THEN 
             price_range = 'cheap';
-        ELSEIF amount BETWEEN 5.01 AND 10.00 THEN
+        ELSEIF amount BETWEEN 5.00 AND 10.00 THEN
             price_range = 'budget';
         ELSE
             price_range = 'expensive';
@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS rental_details;
 
 CREATE TABLE IF NOT EXISTS
     rental_details (
+        rental_id INTEGER,
         customer_id SMALLINT,
         amount NUMERIC(5, 2)
     );
@@ -42,21 +43,24 @@ CREATE TABLE IF NOT EXISTS
 -- D Complex query to extract data, for the detailed table 'rental_details'.
 INSERT INTO
     rental_details (
+        ---- fields or columns from 'rental'----
+        rental_id,
+        ---- fields or columns from 'payment' ----
         customer_id,
         amount
     )
     ---- selecting fields to load into detailed table ----
 SELECT
+    rnt.rental_id,
     pay.customer_id,
     pay.amount
 FROM
     rental AS rnt
     ---- extracting data from both 'rental' and 'payment' tables ----
-    INNER JOIN payment AS pay ON rnt.customer_id = pay.customer_id
+    INNER JOIN payment AS pay ON rnt.rental_id = pay.rental_id
 ORDER BY
     customer_id;
 
----- displaying table ----
 SELECT
     *
 FROM
@@ -85,19 +89,20 @@ EXECUTE PROCEDURE refresh_rental_summary_func ();
 CREATE
 OR REPLACE PROCEDURE rebuild_rental_details () LANGUAGE plpgsql AS $$
 BEGIN
-DELETE FROM rental_details; -- clears old data from table
+DELETE FROM rental_details;
 
----- extracting new data from both 'rental' and 'payment' tables to update detailed table ----
 INSERT INTO rental_details(
+    rental_id,
     customer_id,
-    amount
-   )
+    amount)
 
 SELECT
+rnt.rental_id,
 pay.customer_id, pay.amount
+
 FROM rental AS rnt
 INNER JOIN payment AS pay
-ON rnt.customer_id = pay.customer_id
+ON rnt.rental_id = pay.rental_id
 ORDER BY customer_id;
 END;
 $$;
@@ -106,19 +111,18 @@ $$;
 CREATE
 OR REPLACE PROCEDURE rebuild_rental_summary () LANGUAGE plpgsql AS $$
 BEGIN
-DELETE FROM rental_summary; -- clears all old data from table
+DELETE FROM rental_summary;
 
----- extracting new data from 'rental_details' table ----
 INSERT INTO 
     rental_summary( 
         SELECT 
            customer_id,
-           SUM(case price_aggregator(amount) when 'cheap' then 1 else 0 end) as cheapest_bought,
-           SUM(case price_aggregator(amount) when 'budget' then 1 else 0 end) as budget_bought,
-           SUM(case price_aggregator(amount) when 'expensive' then 1 else 0 end) as expensive_bought
+           COUNT(case price_aggregator(amount) when 'cheap' then 1 end) as cheapest_bought,
+           COUNT(case price_aggregator(amount) when 'budget' then 1 end) as budget_bought,
+           COUNT(case price_aggregator(amount) when 'expensive' then 1 end) as expensive_bought
         FROM rental_details
         GROUP BY customer_id
-        ORDER BY customer_id
+		ORDER BY customer_id
     );
 END;
 $$;
