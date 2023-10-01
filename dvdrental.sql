@@ -1,7 +1,7 @@
--- B Function that transforms ___ identified in A4.
--- Transformation 3: Aggregation of total number of rentals bought within each price range
+-- PART B 
+-- Function that transforms NUMERIC(5,2) prices into VARCHAR categories. 
 CREATE
-OR REPLACE FUNCTION price_aggregator (amount NUMERIC(5, 2)) RETURNS VARCHAR LANGUAGE plpgsql AS $$
+OR REPLACE FUNCTION price_categorizer (amount NUMERIC(5, 2)) RETURNS VARCHAR LANGUAGE plpgsql AS $$
 DECLARE
     price_range VARCHAR(15);
    BEGIN
@@ -17,8 +17,9 @@ DECLARE
     END;
 $$;
 
---/////////////////////////////////////////////////////////////////////////////--
--- C Creating empty detailed table.
+---------------------------------------------
+-- PART C
+-- C: Creating empty detailed table.
 DROP TABLE IF EXISTS rental_details;
 
 CREATE TABLE IF NOT EXISTS
@@ -28,7 +29,7 @@ CREATE TABLE IF NOT EXISTS
         amount NUMERIC(5, 2)
     );
 
--- C Creating empty summary table.
+-- C: Creating empty summary table.
 DROP TABLE IF EXISTS rental_summary;
 
 CREATE TABLE IF NOT EXISTS
@@ -39,24 +40,25 @@ CREATE TABLE IF NOT EXISTS
         expensive_bought INTEGER
     );
 
---/////////////////////////////////////////////////////////////////////////////--
--- D Complex query to extract data, for the detailed table 'rental_details'.
+---------------------------------------------
+-- PART D 
+-- D: Complex query to extract data from rental and payment, into the detailed table 'rental_details'.
 INSERT INTO
     rental_details (
-        ---- fields or columns from 'rental'----
+        ---- field from 'rental'
         rental_id,
-        ---- fields or columns from 'payment' ----
+        ---- fields from 'payment'
         customer_id,
         amount
     )
-    ---- selecting fields to load into detailed table ----
+    -- selecting fields to load into detailed table
 SELECT
     rnt.rental_id,
     pay.customer_id,
     pay.amount
 FROM
     rental AS rnt
-    ---- extracting data from both 'rental' and 'payment' tables ----
+    -- extracting data from both 'rental' and 'payment' tables
     INNER JOIN payment AS pay ON rnt.rental_id = pay.rental_id
 ORDER BY
     customer_id;
@@ -66,26 +68,27 @@ SELECT
 FROM
     rental_details;
 
---/////////////////////////////////////////////////////////////////////////////--
--- E Trigger created to continually update summary table 'rental_summary'.
----- creating function to call with trigger ----
+---------------------------------------------
+-- PART E 
+-- Creating the trigger function.
 CREATE
 OR REPLACE FUNCTION refresh_rental_summary_func () RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN 
----- calls function from section F to rebuild summary table ----
-    CALL rebuild_rental_summary();
+    CALL rebuild_rental_summary(); -- procedure to refresh summary table
 RETURN NULL;
 END;
 $$;
 
----- creating trigger, it will activate any time the INSERT transaction is used ----
+-- E: The created trigger, it will update any time new data is INSERTED into the detailed table.
 CREATE TRIGGER rebuild_rental_summary_trigger
 AFTER INSERT ON rental_details FOR EACH STATEMENT
 EXECUTE PROCEDURE refresh_rental_summary_func ();
 
---/////////////////////////////////////////////////////////////////////////////--
--- F Stored Procedures that refresh data in both the detailed and summary tables
----- refreshing detailed table 'rental_details' ----
+---------------------------------------------
+-- PART F
+-- Stored Procedures that refresh data in both the detailed and summary tables
+
+-- F: Stored procedure to refresh detailed table 'rental_details'.
 CREATE
 OR REPLACE PROCEDURE rebuild_rental_details () LANGUAGE plpgsql AS $$
 BEGIN
@@ -107,7 +110,7 @@ ORDER BY customer_id;
 END;
 $$;
 
----- refreshing summary table 'rental_summary' ----
+-- F: Stored procedure to refresh summary table 'rental_summary'.
 CREATE
 OR REPLACE PROCEDURE rebuild_rental_summary () LANGUAGE plpgsql AS $$
 BEGIN
@@ -117,9 +120,9 @@ INSERT INTO
     rental_summary( 
         SELECT 
            customer_id,
-           COUNT(case price_aggregator(amount) when 'cheap' then 1 end) as cheapest_bought,
-           COUNT(case price_aggregator(amount) when 'budget' then 1 end) as budget_bought,
-           COUNT(case price_aggregator(amount) when 'expensive' then 1 end) as expensive_bought
+           COUNT(case price_categorizer(amount) when 'cheap' then 1 end) as cheapest_bought,
+           COUNT(case price_categorizer(amount) when 'budget' then 1 end) as budget_bought,
+           COUNT(case price_categorizer(amount) when 'expensive' then 1 end) as expensive_bought
         FROM rental_details
         GROUP BY customer_id
 		ORDER BY customer_id
@@ -127,7 +130,9 @@ INSERT INTO
 END;
 $$;
 
----- F rebuilding BOTH tables ----
+-- F: Stored Procedure used to rebuild BOTH tables. 
+---- In practice this is what can be scheduled with a tool such as
+---- pgagent from pgadmin4.
 CREATE
 OR REPLACE PROCEDURE rebuild_tables () LANGUAGE plpgsql AS $$
 BEGIN
